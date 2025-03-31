@@ -115,6 +115,17 @@ class Matrix:
     def aplicar_a_todos(self, fn):
         return Matrix([[fn(i) for i in line] for line in self.val])
 
+    def elementwise_mul(self, other):
+        if self.d != other.d:
+            raise Exception(
+                f"Tentando somar matrizes incompativeis ({self.d} != {other.d})"
+            )
+
+        M3 = []
+        for i in range(self.d[0]):
+            M3.append([self[i][j] * other[i][j] for j in range(self.d[1])])
+        return Matrix(M3)
+
 
 if __name__ == "__main__":
     A = Matrix([[1, 2, 3], [1, 2, 3], [4, 5, 6]])
