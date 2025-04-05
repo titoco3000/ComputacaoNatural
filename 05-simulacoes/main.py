@@ -7,18 +7,24 @@ LIVE_COLOR = (0, 0, 255)
 WHITE = (255, 255, 255)
 SIDEBAR_COLOR = (200, 200, 200)
 
-SIMULATION_SIZE = 100
+SIMULATION_SIZE = 120
 HEADER_SIZE = 0.1
 ZOOM_SPEED = 0.01
 ZOOM_RATIO = 10
 
+# prefab name, pattern
+PREFABS = [
+    ("beacon - 3", "beacon"),
+    ("glider", "glider"),
+    ("glider-gun", "glider-gun"),
+    ("pulsar", "pulsar"),
+    ("toad", "toad"),
+    ("spaceship", "spaceship"),
+]
+
 
 def getPixelLife(frame, x, y):
     w, h = frame.get_size()
-    # try:
-    #     print(x, y, frame.get_at((x, y)))
-    # except:
-    #     pass
     if x > 0 and x < w and y > 0 and y < h and frame.get_at((x, y)) == LIVE_COLOR:
         return 1
     return 0
@@ -30,13 +36,11 @@ def countNeighbours(frame, x, y):
         for i in range(x - 1, x + 2)
         for j in range(y - 1, y + 2)
     ]
-    # print(f"{x}, {y}: {v}")
     return sum(v)
 
 
 def get_new_state(frame, coord):
     count = countNeighbours(frame, *coord)
-    # coord == (4, 6) and print(f"count: {count}")
     if count < 3 or count > 4:
         return False
     elif count == 3:
@@ -57,7 +61,6 @@ def load_pattern(pattern_name, frame):
                 x = -1
             elif char == b"X":
                 if x < SIMULATION_SIZE and y < SIMULATION_SIZE:
-                    print(x, y)
                     frame.set_at((x, y), LIVE_COLOR)
             x += 1
 
@@ -72,29 +75,16 @@ def main():
     simulation_surface = pygame.Surface((SIMULATION_SIZE, SIMULATION_SIZE))
     auxiliary_surface = pygame.Surface((SIMULATION_SIZE, SIMULATION_SIZE))
 
-    load_pattern("pulsar", simulation_surface)
-
-    for y in range(SIMULATION_SIZE):
-        print(
-            [
-                ("." if simulation_surface.get_at((x, y)) == DEAD_COLOR else "X")
-                for x in range(SIMULATION_SIZE)
-            ]
-        )
-
-    # for x in range(SIMULATION_SIZE):
-    #     for y in range(SIMULATION_SIZE):
-    #         color = LIVE_COLOR if (x + y) % 2 == 0 else DEAD_COLOR  # Checker pattern
-    #         simulation_surface.set_at((x, y), color)
+    load_pattern("glider-gun", simulation_surface)
 
     zoom = 0.1
     view_position = Vector2(0, 0)
     drag_start = None
 
-    celula_atual = 0
-    sync = True
+    sync = False
 
-    # Main loop
+    header_font = pygame.font.SysFont("Futura", 30)
+
     running = True
     while running:
         for event in pygame.event.get():
@@ -124,14 +114,35 @@ def main():
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:
                     drag_start = Vector2(event.pos)
+
+                    for rect, pattern in prefab_buttons:
+                        if rect.collidepoint(event.pos):
+                            load_pattern(pattern, simulation_surface)
+                            break
+
                 elif event.button == 3:
                     pass
 
             elif event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:
                     drag_start = None
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_s:
+                    sync = not sync
 
         if sync:
+            for i in range(SIMULATION_SIZE):
+                for j in range(SIMULATION_SIZE):
+                    coord_celula = (i, j)
+                    simulation_surface.set_at(
+                        coord_celula,
+                        (
+                            LIVE_COLOR
+                            if get_new_state(simulation_surface, coord_celula)
+                            else DEAD_COLOR
+                        ),
+                    )
+        else:
             for i in range(SIMULATION_SIZE):
                 for j in range(SIMULATION_SIZE):
                     coord_celula = (i, j)
@@ -148,22 +159,6 @@ def main():
                 simulation_surface,
                 auxiliary_surface,
             )
-
-        else:
-            # atualiza uma celula
-            coord_celula = (
-                celula_atual % SIMULATION_SIZE,
-                celula_atual // SIMULATION_SIZE,
-            )
-            simulation_surface.set_at(
-                coord_celula,
-                (
-                    LIVE_COLOR
-                    if get_new_state(simulation_surface, coord_celula)
-                    else DEAD_COLOR
-                ),
-            )
-            celula_atual = (celula_atual + 1) % (SIMULATION_SIZE**2)
 
         max_dimension = min(screen_size.x, screen_size.y)
 
@@ -202,6 +197,34 @@ def main():
             SIDEBAR_COLOR,
             (0, 0, sidebar_width, screen_size.y),
         )
+
+        header_font_size = int(sidebar_width // 10)
+        header_font = pygame.font.SysFont("Futura", header_font_size)
+        screen.blit(
+            header_font.render(
+                "Game of Life " + ("sync" if sync else ""), True, (0, 0, 0)
+            ),
+            (sidebar_width // 30, sidebar_width // 30),
+        )
+
+        # Create and draw prefab buttons
+        button_height = int(sidebar_width // 8)
+        button_font = pygame.font.SysFont("Futura", int(button_height * 0.5))
+        button_y = sidebar_width // 15 + button_height  # Leave space after header
+
+        prefab_buttons = []
+        for name, pattern in PREFABS:
+            rect = pygame.Rect(10, button_y, sidebar_width - 20, button_height)
+            pygame.draw.rect(screen, (180, 180, 180), rect)
+            pygame.draw.rect(screen, (0, 0, 0), rect, 2)  # border
+
+            text_surf = button_font.render(name, True, (0, 0, 0))
+            text_rect = text_surf.get_rect(center=rect.center)
+            screen.blit(text_surf, text_rect)
+
+            prefab_buttons.append((rect, pattern))
+            button_y += button_height + 10
+
         pygame.display.flip()
 
     pygame.quit()
@@ -209,16 +232,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-"""
-3 3 (0, 0, 0, 255)
-3 4 (0, 0, 0, 255)
-3 5 (0, 0, 0, 255)
-4 3 (0, 0, 0, 255)
-4 4 (0, 0, 255, 255)
-4 5 (0, 0, 0, 255)
-5 3 (0, 0, 0, 255)
-5 4 (0, 0, 255, 255)
-5 5 (0, 0, 255, 255)
-4, 4: [0, 0, 0, 0, 1, 0, 0, 1, 1]
-"""
