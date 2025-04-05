@@ -16,8 +16,7 @@ ZOOM_RATIO = 10
 def main():
     pygame.init()
 
-    info = pygame.display.Info()
-    screen_size = Vector2(info.current_w, info.current_h) * 0.5
+    screen_size = Vector2(1000, 700)
     print(screen_size)
 
     screen = pygame.display.set_mode(screen_size, pygame.RESIZABLE)
@@ -87,7 +86,10 @@ def main():
             view_position -= drag_start - p
             drag_start = p
 
-        view_position.y = max(-arena_size * zoom * ZOOM_RATIO, min(0, view_position.y))
+        view_position.y = max(
+            screen_size.y - arena_size * (1 + zoom * ZOOM_RATIO),
+            min(0, view_position.y),
+        )
         view_position.x = max(
             screen_size.x - arena_size * (1 + zoom * ZOOM_RATIO),
             min(sidebar_width, view_position.x),
