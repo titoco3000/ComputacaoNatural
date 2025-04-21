@@ -1,22 +1,22 @@
 import pygame
 from pygame import Vector2 as Vec2
-import numpy as np
 import random
 import math
 
 BOID_COLOR = (0, 0, 200)
-BOID_RADIUS = 5
+TRAIL_COLOR = (255, 255, 255)
 SIM_SIZE = (1000, 800)
+BOID_RADIUS = 5
+NUM_BOIDS = 500
 MAX_SPEED = 4
-NUM_BOIDS = 300
 
 NOISE = 0.01
 ALIGNMENT = 0.1
 SEPARATION = 10
-INFLUENCE_RADIUS = 10 * BOID_RADIUS
-OBSTACLE_INFLUENCE_RADIUS = 2 * BOID_RADIUS
-INERCIA = 0.9
-DRAG = 0.00
+INFLUENCE_RADIUS = 5 * BOID_RADIUS
+OBSTACLE_INFLUENCE_RADIUS = 3 * BOID_RADIUS
+INERTIA = 0.9
+DRAG = 0.0001
 
 
 def vec2_lerp(a, b, c):
@@ -25,7 +25,10 @@ def vec2_lerp(a, b, c):
 
 class Boid:
     def __init__(self):
-        self.pos = Vec2(0, random.uniform(0, SIM_SIZE[1]))
+        self.reset()
+
+    def reset(self):
+        self.pos = Vec2(-BOID_RADIUS, random.uniform(0, SIM_SIZE[1]))
         self.vel = Vec2(MAX_SPEED, 0)
 
     def draw(self, screen):
@@ -41,6 +44,7 @@ class Boid:
         pygame.draw.polygon(screen, BOID_COLOR, rotated)
 
     def update(self, others, obstacles):
+        # get other boids that are close enough to affect
         neighbors = [
             b
             for b in others
@@ -63,23 +67,21 @@ class Boid:
         separation_force *= SEPARATION
 
         # move to the start when leaving the area
-        avoidance_force = Vec2()
         if (
             self.pos.x < -BOID_RADIUS
             or self.pos.x > SIM_SIZE[0]
             or self.pos.y < -BOID_RADIUS
-            or self.pos.y > SIM_SIZE[1]
+            or self.pos.y > SIM_SIZE[1] + BOID_RADIUS
         ):
-            self.pos.x = -BOID_RADIUS
-            self.pos.y = random.uniform(0, SIM_SIZE[1])
-            self.vel = Vec2(MAX_SPEED, 0)
+            self.reset()
 
         # avoid obstacles
+        avoidance_force = Vec2()
         for obs in obstacles:
             for i in range(len(obs.vertices)):
                 a = obs.vertices[i]
                 b = obs.vertices[(i + 1) % len(obs.vertices)]
-                closest = self._closest_point_on_segment(a, b, self.pos)
+                closest = _closest_point_on_segment(a, b, self.pos)
                 dist = self.pos.distance_to(closest)
                 if dist < OBSTACLE_INFLUENCE_RADIUS:
                     away = self.pos - closest
@@ -93,10 +95,10 @@ class Boid:
 
         # Combine forces
         self.vel = vec2_lerp(
-            self.vel,
             (self.vel + align_force + separation_force + avoidance_force + random_force)
             * (1 - DRAG),
-            (1 - INERCIA),
+            self.vel,
+            INERTIA,
         )
 
         # Limit speed
@@ -105,11 +107,13 @@ class Boid:
 
         self.pos += self.vel
 
-    def _closest_point_on_segment(self, a, b, p):
-        """Return closest point on segment ab to point p."""
-        ab = b - a
-        t = max(0, min(1, (p - a).dot(ab) / ab.length_squared()))
-        return a + ab * t
+        # for obs in obstacles:
+        #     if obs.contains(self.pos):
+        #         self.reset()
+        #         break
+
+    def marcar(self, surface):
+        surface.set_at((int(self.pos.x), int(self.pos.y)), TRAIL_COLOR)
 
 
 class Obstacle:
@@ -118,6 +122,27 @@ class Obstacle:
 
     def draw(self, screen):
         pygame.draw.polygon(screen, (200, 50, 50), self.vertices, width=2)
+
+    def contains(self, point):
+        x, y = point
+        inside = False
+        n = len(self.vertices)
+        for i in range(n):
+            xi, yi = self.vertices[i]
+            xj, yj = self.vertices[(i + 1) % n]
+            intersect = ((yi > y) != (yj > y)) and (
+                x < (xj - xi) * (y - yi) / (yj - yi + 1e-6) + xi
+            )
+            if intersect:
+                inside = not inside
+        return inside
+
+
+def _closest_point_on_segment(a, b, p):
+    """Return closest point on segment ab to point p."""
+    ab = b - a
+    t = max(0, min(1, (p - a).dot(ab) / ab.length_squared()))
+    return a + ab * t
 
 
 def generate_obstacles(num=5):
@@ -141,12 +166,21 @@ def generate_obstacles(num=5):
     return obstacles
 
 
+def darken_surface(surface, amount=1):
+    dark = pygame.Surface(surface.get_size())
+    dark.fill((amount, amount, amount))
+    surface.blit(dark, (0, 0), special_flags=pygame.BLEND_RGB_SUB)
+
+
 def main():
     pygame.init()
     screen = pygame.display.set_mode(SIM_SIZE)
     pygame.display.set_caption("Boids")
+
+    rastros = pygame.Surface(SIM_SIZE)
+    rastros.fill((0, 0, 0))
+
     clock = pygame.time.Clock()
-    width, height = screen.get_size()
 
     obstacles = generate_obstacles()
 
@@ -165,11 +199,14 @@ def main():
         for boid in boids:
             boid.update(boids, obstacles)
 
-        screen.fill((0, 0, 0))
+        darken_surface(rastros)
+
+        screen.blit(rastros, (0, 0))
         for obstacle in obstacles:
             obstacle.draw(screen)
         for boid in boids:
             boid.draw(screen)
+            boid.marcar(rastros)
 
         pygame.display.flip()
         clock.tick(60)
