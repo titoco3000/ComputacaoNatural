@@ -2,19 +2,20 @@ import pygame
 from pygame import Vector2 as Vec2
 import random
 import math
+import numpy as np
 
 BOID_COLOR = (0, 0, 200)
 TRAIL_COLOR = (255, 255, 255)
 SIM_SIZE = (1000, 800)
 BOID_RADIUS = 5
-NUM_BOIDS = 500
-MAX_SPEED = 4
+NUM_BOIDS = 1000
+MAX_SPEED = 5
 
 NOISE = 0.01
 ALIGNMENT = 0.1
 SEPARATION = 10
 INFLUENCE_RADIUS = 5 * BOID_RADIUS
-OBSTACLE_INFLUENCE_RADIUS = 3 * BOID_RADIUS
+OBSTACLE_INFLUENCE_RADIUS = 4 * BOID_RADIUS
 INERTIA = 0.9
 DRAG = 0.0001
 
@@ -112,8 +113,10 @@ class Boid:
         #         self.reset()
         #         break
 
-    def marcar(self, surface):
-        surface.set_at((int(self.pos.x), int(self.pos.y)), TRAIL_COLOR)
+    def marcar(self, trails_surface, heatmap):
+        intpos = (int(self.pos.x), int(self.pos.y))
+        trails_surface.set_at(intpos, TRAIL_COLOR)
+        heatmap.marcar(intpos)
 
 
 class Obstacle:
@@ -138,6 +141,34 @@ class Obstacle:
         return inside
 
 
+class HeatMap:
+    def __init__(self, color=(255, 0, 0)):
+        self.color = np.array(color, dtype=np.uint8)  # RGB as NumPy array
+        self.alpha = np.full(SIM_SIZE, 25, dtype=np.uint8)
+
+    def marcar(self, pos):
+        x, y = pos
+        if 0 <= x < SIM_SIZE[0] and 0 <= y < SIM_SIZE[1]:
+            if self.alpha[x, y] < 255:
+                self.alpha[x, y] += 10
+            else:
+                # Decrease all others by 1, but not below 0
+                self.alpha = np.maximum(self.alpha - 1, 0)
+
+    def draw(self, target_surface):
+        width, height = SIM_SIZE
+        rgba_array = np.zeros((height, width, 4), dtype=np.uint8)  # (H, W, 4)
+
+        rgba_array[..., 0:3] = self.color  # Broadcast RGB
+        rgba_array[..., 3] = self.alpha.T  # Transpose alpha from (W, H) to (H, W)
+
+        rgba_surface = pygame.image.frombuffer(
+            rgba_array.flatten(), (width, height), "RGBA"
+        )
+        rgba_surface = rgba_surface.convert_alpha()
+        target_surface.blit(rgba_surface, (0, 0))
+
+
 def _closest_point_on_segment(a, b, p):
     """Return closest point on segment ab to point p."""
     ab = b - a
@@ -152,7 +183,7 @@ def generate_obstacles(num=5):
             random.uniform(100, SIM_SIZE[0] - 100),
             random.uniform(100, SIM_SIZE[1] - 100),
         )
-        radius = random.uniform(20, 60)
+        radius = random.uniform(50, 80)
         sides = random.randint(3, 6)
         angle_offset = random.uniform(0, 2 * math.pi)
         vertices = [
@@ -180,33 +211,62 @@ def main():
     rastros = pygame.Surface(SIM_SIZE)
     rastros.fill((0, 0, 0))
 
+    heatmap = HeatMap()
+
     clock = pygame.time.Clock()
 
     obstacles = generate_obstacles()
 
     boids = [Boid() for _ in range(NUM_BOIDS)]
 
+    paused = False
+    show_trail = True
+    show_heatmap = True
+    trapped_verifier_counter = 0
+
     running = True
     while running:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_p:
+                    paused = not paused
+                elif event.key == pygame.K_r:
+                    boids = [Boid() for _ in range(NUM_BOIDS)]
+                elif event.key == pygame.K_t:
+                    show_trail = not show_trail
+                elif event.key == pygame.K_h:
+                    show_heatmap = not show_heatmap
 
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_r]:
-            boids = [Boid() for _ in range(NUM_BOIDS)]
+        if not paused:
+            for boid in boids:
+                boid.update(boids, obstacles)
+                boid.marcar(rastros, heatmap)
 
-        for boid in boids:
-            boid.update(boids, obstacles)
+            trapped_verifier_counter += 1
+            if trapped_verifier_counter > 20:
+                trapped_verifier_counter = 0
+                for boid in boids:
+                    for obs in obstacles:
+                        if obs.contains(boid.pos):
+                            boid.reset()
+                            break
 
-        darken_surface(rastros)
+            darken_surface(rastros)
 
-        screen.blit(rastros, (0, 0))
+        if show_trail:
+            screen.blit(rastros, (0, 0))
+        else:
+            screen.fill((0, 0, 0))
+
+        if show_heatmap:
+            heatmap.draw(screen)
+
         for obstacle in obstacles:
             obstacle.draw(screen)
         for boid in boids:
             boid.draw(screen)
-            boid.marcar(rastros)
 
         pygame.display.flip()
         clock.tick(60)
