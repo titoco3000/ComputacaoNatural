@@ -20,6 +20,7 @@ PREFABS = [
     ("pulsar", "pulsar"),
     ("toad", "toad"),
     ("spaceship", "spaceship"),
+    ("square", "square"),
 ]
 
 
