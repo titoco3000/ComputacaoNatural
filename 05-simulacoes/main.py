@@ -2,53 +2,89 @@ import pygame
 from pygame import Vector2
 
 
-DEAD_COLOR = (0, 0, 0)
-LIVE_COLOR = (0, 0, 255)
+# genérico para qqr automato
 WHITE = (255, 255, 255)
 SIDEBAR_COLOR = (200, 200, 200)
-
 SIMULATION_SIZE = 120
 HEADER_SIZE = 0.1
 ZOOM_SPEED = 0.01
 ZOOM_RATIO = 10
 
-# prefab name, pattern
+# específico ao jogo da vida
+DEAD_COLOR = (0, 0, 0)
+LIVE_COLOR = (0, 0, 255)
+sync = False
+# objeto que indica que cor equivale a que char nos arquivos
+file_pattern = {b"X": LIVE_COLOR, "default": DEAD_COLOR}
+
+# Cada padrão para ser carregado fica em um arquivo em /patterns
 PREFABS = [
-    ("beacon - 3", "beacon"),
-    ("glider", "glider"),
-    ("glider-gun", "glider-gun"),
-    ("pulsar", "pulsar"),
-    ("toad", "toad"),
-    ("spaceship", "spaceship"),
-    ("square", "square"),
+    "glider-gun",
+    "beacon",
+    "glider",
+    "pulsar",
+    "toad",
+    "spaceship",
+    "square",
 ]
 
 
-def getPixelLife(frame, x, y):
-    w, h = frame.get_size()
-    if x > 0 and x < w and y > 0 and y < h and frame.get_at((x, y)) == LIVE_COLOR:
-        return 1
-    return 0
+# o conteudo dessa função define a simulação
+def automaton_step(origin_surface, target_surface):
+    def getPixelLife(frame, x, y):
+        w, h = frame.get_size()
+        if x > 0 and x < w and y > 0 and y < h and frame.get_at((x, y)) == LIVE_COLOR:
+            return 1
+        return 0
+
+    def countNeighbours(frame, x, y):
+        v = [
+            getPixelLife(frame, i, j)
+            for i in range(x - 1, x + 2)
+            for j in range(y - 1, y + 2)
+        ]
+        return sum(v)
+
+    def get_new_state(frame, coord):
+        count = countNeighbours(frame, *coord)
+        if count < 3 or count > 4:
+            return False
+        elif count == 3:
+            return True
+        return frame.get_at(coord) == LIVE_COLOR
+
+    if sync:
+        for i in range(SIMULATION_SIZE):
+            for j in range(SIMULATION_SIZE):
+                coord_celula = (i, j)
+                state = (
+                    LIVE_COLOR
+                    if get_new_state(origin_surface, coord_celula)
+                    else DEAD_COLOR
+                )
+                origin_surface.set_at(
+                    coord_celula,
+                    state,
+                )
+                target_surface.set_at(
+                    coord_celula,
+                    state,
+                )
+    else:
+        for i in range(SIMULATION_SIZE):
+            for j in range(SIMULATION_SIZE):
+                coord_celula = (i, j)
+                target_surface.set_at(
+                    coord_celula,
+                    (
+                        LIVE_COLOR
+                        if get_new_state(origin_surface, coord_celula)
+                        else DEAD_COLOR
+                    ),
+                )
 
 
-def countNeighbours(frame, x, y):
-    v = [
-        getPixelLife(frame, i, j)
-        for i in range(x - 1, x + 2)
-        for j in range(y - 1, y + 2)
-    ]
-    return sum(v)
-
-
-def get_new_state(frame, coord):
-    count = countNeighbours(frame, *coord)
-    if count < 3 or count > 4:
-        return False
-    elif count == 3:
-        return True
-    return frame.get_at(coord) == LIVE_COLOR
-
-
+# Carrega um patten, usando o padrão especificado
 def load_pattern(pattern_name, frame):
     frame.fill(DEAD_COLOR)
     x, y = 0, 0
@@ -60,13 +96,17 @@ def load_pattern(pattern_name, frame):
             if char == b"\n":
                 y += 1
                 x = -1
-            elif char == b"X":
-                if x < SIMULATION_SIZE and y < SIMULATION_SIZE:
-                    frame.set_at((x, y), LIVE_COLOR)
+            elif x < SIMULATION_SIZE and y < SIMULATION_SIZE:
+                if char in file_pattern:
+                    frame.set_at((x, y), file_pattern[char])
+                else:
+                    frame.set_at((x, y), file_pattern["default"])
             x += 1
 
 
 def main():
+    global sync
+
     pygame.init()
 
     screen_size = Vector2(1000, 700)
@@ -76,7 +116,7 @@ def main():
     simulation_surface = pygame.Surface((SIMULATION_SIZE, SIMULATION_SIZE))
     auxiliary_surface = pygame.Surface((SIMULATION_SIZE, SIMULATION_SIZE))
 
-    load_pattern("glider-gun", simulation_surface)
+    load_pattern(PREFABS[0], simulation_surface)
 
     zoom = 0.1
     view_position = Vector2(0, 0)
@@ -94,72 +134,42 @@ def main():
             elif event.type == pygame.VIDEORESIZE:
                 screen_size = Vector2(event.dict["size"])
             elif event.type == pygame.MOUSEWHEEL:
-                mouse_pos = Vector2(
-                    pygame.mouse.get_pos()
-                )  # Get mouse position in screen space
                 zoom_factor = event.y * ZOOM_SPEED
                 new_zoom = max(0, min(1, zoom + zoom_factor))
 
-                if new_zoom != zoom:  # Only adjust if zoom changes
-                    # Convert mouse position to surface space before zooming
+                if new_zoom != zoom:  # Só ajusta se zoom tiver sido modificado
+                    # pos do mouse em screen space
+                    mouse_pos = Vector2(pygame.mouse.get_pos())
+                    # Converte pos do mouse para surface space
                     rel_mouse_pos = (mouse_pos - view_position) / (
                         arena_size * (1 + zoom * ZOOM_RATIO)
                     )
-
-                    # Apply zoom
+                    # Aplica zoom
                     zoom = new_zoom
-
-                    # Compute new view position to keep mouse in place
+                    # Calcula nova pos para manter o mouse na mesma pos
                     new_surface_size = arena_size * (1 + zoom * ZOOM_RATIO)
                     view_position = mouse_pos - rel_mouse_pos * new_surface_size
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                if event.button == 1:
-                    drag_start = Vector2(event.pos)
 
-                    for rect, pattern in prefab_buttons:
-                        if rect.collidepoint(event.pos):
-                            load_pattern(pattern, simulation_surface)
-                            break
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                drag_start = Vector2(event.pos)
 
-                elif event.button == 3:
-                    pass
+                for rect, pattern in prefab_buttons:
+                    if rect.collidepoint(event.pos):
+                        load_pattern(pattern, simulation_surface)
+                        break
 
-            elif event.type == pygame.MOUSEBUTTONUP:
-                if event.button == 1:
-                    drag_start = None
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_s:
-                    sync = not sync
+            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+                drag_start = None
+            elif event.type == pygame.KEYDOWN and event.key == pygame.K_s:
+                sync = not sync
 
-        if sync:
-            for i in range(SIMULATION_SIZE):
-                for j in range(SIMULATION_SIZE):
-                    coord_celula = (i, j)
-                    simulation_surface.set_at(
-                        coord_celula,
-                        (
-                            LIVE_COLOR
-                            if get_new_state(simulation_surface, coord_celula)
-                            else DEAD_COLOR
-                        ),
-                    )
-        else:
-            for i in range(SIMULATION_SIZE):
-                for j in range(SIMULATION_SIZE):
-                    coord_celula = (i, j)
-                    auxiliary_surface.set_at(
-                        coord_celula,
-                        (
-                            LIVE_COLOR
-                            if get_new_state(simulation_surface, coord_celula)
-                            else DEAD_COLOR
-                        ),
-                    )
+        automaton_step(simulation_surface, auxiliary_surface)
 
-            auxiliary_surface, simulation_surface = (
-                simulation_surface,
-                auxiliary_surface,
-            )
+        # swap
+        auxiliary_surface, simulation_surface = (
+            simulation_surface,
+            auxiliary_surface,
+        )
 
         max_dimension = min(screen_size.x, screen_size.y)
 
@@ -208,18 +218,18 @@ def main():
             (sidebar_width // 30, sidebar_width // 30),
         )
 
-        # Create and draw prefab buttons
+        # Cria botões de prefab
         button_height = int(sidebar_width // 8)
         button_font = pygame.font.SysFont("Futura", int(button_height * 0.5))
-        button_y = sidebar_width // 15 + button_height  # Leave space after header
+        button_y = sidebar_width // 15 + button_height  # Espaço depois do header
 
         prefab_buttons = []
-        for name, pattern in PREFABS:
+        for pattern in PREFABS:
             rect = pygame.Rect(10, button_y, sidebar_width - 20, button_height)
             pygame.draw.rect(screen, (180, 180, 180), rect)
-            pygame.draw.rect(screen, (0, 0, 0), rect, 2)  # border
+            pygame.draw.rect(screen, (0, 0, 0), rect, 2)  # borda
 
-            text_surf = button_font.render(name, True, (0, 0, 0))
+            text_surf = button_font.render(pattern, True, (0, 0, 0))
             text_rect = text_surf.get_rect(center=rect.center)
             screen.blit(text_surf, text_rect)
 
