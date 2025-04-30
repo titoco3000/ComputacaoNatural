@@ -180,11 +180,11 @@ class HeatMap:
     def register(self, pos):
         x, y = pos
         if 0 <= x < SIM_SIZE[0] and 0 <= y < SIM_SIZE[1]:
-            if self.rgba[x, y, 3] < 245:
-                self.rgba[x, y, 3] += 10
+            if self.rgba[x, y, 3] < 250:
+                self.rgba[x, y, 3] += 5
             else:
-                # Multiply all alphas (including current pixel) by 70%
-                self.rgba[..., 3] = (self.rgba[..., 3] * 0.7).astype(np.uint8)
+                # Multiply all alphas (including current pixel) by 99%
+                self.rgba[..., 3] = (self.rgba[..., 3] * 0.95).astype(np.uint8)
 
     def print_alpha_stats(self):
         alpha = self.rgba[..., 3]  # Extract the alpha channel
